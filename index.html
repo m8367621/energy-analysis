@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32 Energy Monitor Dashboard</title>
+  <!-- Firebase JS SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0b1120;
+      --card-bg: #172033;
+      --card-border: #28354e;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-blue: #38bdf8;
+      --accent-green: #22c55e;
+      --accent-red: #ef4444;
+      --accent-purple: #6366f1;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+
+    body {
+      background: radial-gradient(circle at top right, #1e1b4b, var(--bg-dark) 50%);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .dashboard-wrapper {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 310px 1fr;
+      gap: 24px;
+    }
+
+    /* Responsive Mobile Layout */
+    @media (max-width: 860px) {
+      .dashboard-wrapper {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    /* --- LEFT SIDEBAR --- */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .brand-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    }
+
+    .brand-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      line-height: 1.35;
+      color: #fff;
+    }
+
+    .brand-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+
+    .section-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #e2e8f0;
+      margin-bottom: 14px;
+    }
+
+    /* Protection Status Box */
+    .status-badge {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      transition: all 0.3s ease;
+    }
+
+    .status-normal {
+      background: rgba(34, 197, 94, 0.2);
+      border: 1px solid var(--accent-green);
+      color: #4ade80;
+    }
+
+    .status-fault {
+      background: rgba(239, 68, 68, 0.25);
+      border: 1px solid var(--accent-red);
+      color: #f87171;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      50% { box-shadow: 0 0 12px 4px rgba(239, 68, 68, 0.25); }
+    }
+
+    .status-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    /* Threshold Input Controls */
+    .input-group {
+      margin-bottom: 14px;
+    }
+
+    .input-group label {
+      display: block;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .input-group input {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #fff;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      outline: none;
+    }
+
+    .input-group input:focus {
+      border-color: var(--accent-blue);
+    }
+
+    .save-btn {
+      width: 100%;
+      background: linear-gradient(90deg, #4f46e5, #7c3aed);
+      color: #fff;
+      border: none;
+      padding: 12px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .save-btn:hover {
+      opacity: 0.92;
+    }
+
+    .save-msg {
+      margin-top: 10px;
+      font-size: 0.8rem;
+      color: #4ade80;
+      text-align: center;
+      display: none;
+    }
+
+    /* --- RIGHT MAIN CONTENT --- */
+    .main-area {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .main-header {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* Top Gauge Row */
+    .gauge-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+    }
+
+    .gauge-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .gauge-svg {
+      width: 210px;
+      height: 125px;
+      overflow: visible;
+    }
+
+    .gauge-track {
+      fill: none;
+      stroke: #26334d;
+      stroke-width: 16;
+      stroke-linecap: round;
+    }
+
+    .gauge-fill {
+      fill: none;
+      stroke-width: 16;
+      stroke-linecap: round;
+      stroke-dasharray: 251.2;
+      stroke-dashoffset: 251.2;
+      transition: stroke-dashoffset 0.6s ease, stroke 0.3s ease;
+    }
+
+    .gauge-val {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-top: -28px;
+      color: #fff;
+    }
+
+    .gauge-label {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Digital Metric Cards */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    @media (max-width: 560px) {
+      .metrics-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .metric-card {
+      text-align: center;
+      padding: 18px;
+    }
+
+    .metric-title {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .metric-value {
+      font-size: 1.65rem;
+      font-weight: 700;
+      color: #fff;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* Notification Log Section */
+    .log-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .log-item {
+      background: #0f172a;
+      border: 1px solid #28354e;
+      border-left: 4px solid var(--accent-blue);
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .log-item.log-normal { border-left-color: var(--accent-green); }
+    .log-item.log-fault  { border-left-color: var(--accent-red); }
+  </style>
+  <link rel="manifest" href="manifest.json">
+  <script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js');
+  }
+  </script>
+</head>
+<body>
+
+  <div class="dashboard-wrapper">
+    <!-- LEFT SIDEBAR -->
+    <aside class="sidebar">
+      <!-- Project Title Card -->
+      <div class="card brand-card">
+        <div class="brand-icon">⚡</div>
+        <div>
+          <div class="brand-title">IoT-Based Energy Conservation and Consumption Analysis</div>
+          <div class="brand-sub">PZEM-004T + Voltage Protection</div>
+        </div>
+      </div>
+
+      <!-- Protection Status Card -->
+      <div class="card">
+        <div class="section-title">Protection Status</div>
+        <div id="statusBadge" class="status-badge status-normal">Normal</div>
+        <div id="statusDesc" class="status-desc">
+          System is running normally. Load protection is ready.
+        </div>
+      </div>
+
+      <!-- Threshold Settings Card -->
+      <div class="card">
+        <div class="section-title">Threshold Settings</div>
+
+        <div class="input-group">
+          <label for="overVoltInput">Over Voltage (V)</label>
+          <input type="number" id="overVoltInput" value="259" step="1" />
+        </div>
+
+        <div class="input-group">
+          <label for="underVoltInput">Under Voltage (V)</label>
+          <input type="number" id="underVoltInput" value="180" step="1" />
+        </div>
+
+        <div class="input-group">
+          <label for="costInput">Cost per kWh (₹)</label>
+          <input type="number" id="costInput" value="6.5" step="0.1" />
+        </div>
+
+        <button class="save-btn" onclick="saveThresholds()">Save Settings</button>
+        <div id="saveConfirmation" class="save-msg">
+          The threshold setting is saved successfully!
+        </div>
+      </div>
+    </aside>
+
+    <!-- RIGHT MAIN DASHBOARD -->
+    <main class="main-area">
+      <h1 class="main-header">ESP32 Energy Monitor Dashboard</h1>
+
+      <!-- Top Semi-Circular Gauges -->
+      <div class="gauge-grid">
+        <!-- Voltage Gauge -->
+        <div class="card gauge-card">
+          <svg class="gauge-svg" viewBox="0 0 200 110">
+            <path class="gauge-track" d="M 20 100 A 80 80 0 0 1 180 100" />
+            <path id="voltArc" class="gauge-fill" stroke="#38bdf8" d="M 20 100 A 80 80 0 0 1 180 100" />
+          </svg>
+          <div class="gauge-val"><span id="voltageVal">0.0</span></div>
+          <div class="gauge-label">Voltage (V)</div>
+        </div>
+
+        <!-- Current Gauge -->
+        <div class="card gauge-card">
+          <svg class="gauge-svg" viewBox="0 0 200 110">
+            <path class="gauge-track" d="M 20 100 A 80 80 0 0 1 180 100" />
+            <path id="currArc" class="gauge-fill" stroke="#22c55e" d="M 20 100 A 80 80 0 0 1 180 100" />
+          </svg>
+          <div class="gauge-val"><span id="currentVal">0.00</span></div>
+          <div class="gauge-label">Current (A)</div>
+        </div>
+      </div>
+
+      <!-- Digital Metric Cards (Matching Sketch Layout) -->
+      <div class="metrics-grid">
+        <div class="card metric-card">
+          <div class="metric-title">Energy</div>
+          <div class="metric-value"><span id="energyVal">0.000</span> kWh</div>
+        </div>
+
+        <div class="card metric-card">
+          <div class="metric-title">Frequency</div>
+          <div class="metric-value"><span id="freqVal">0.0</span> Hz</div>
+        </div>
+
+        <div class="card metric-card">
+          <div class="metric-title">Power</div>
+          <div class="metric-value"><span id="powerVal">0.0</span> W</div>
+        </div>
+
+        <div class="card metric-card">
+          <div class="metric-title">Power Factor</div>
+          <div class="metric-value"><span id="pfVal">0.00</span></div>
+        </div>
+
+        <div class="card metric-card">
+          <div class="metric-title">Total Cost (₹)</div>
+          <div class="metric-value">₹ <span id="costVal">0.00</span></div>
+        </div>
+      </div>
+
+      <!-- Notification / Alert Log -->
+      <div class="card">
+        <div class="section-title">Notification / Alert</div>
+        <div id="notificationList" class="log-list">
+          <div class="log-item log-normal">
+            <span>Waiting for ESP32 telemetry...</span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. PASTE YOUR FIREBASE DATABASE URL BELOW
+    // =========================================================================
+    const firebaseConfig = {
+      databaseURL: "https://final-d5793-default-rtdb.firebaseio.com"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // State variables
+    let overVoltageLimit = 259;
+    let underVoltageLimit = 180;
+    let costPerKwh = 6.5;
+    let lastStatusState = "";
+
+    // =========================================================================
+    // 2. LOAD SAVED THRESHOLD SETTINGS FROM FIREBASE
+    // =========================================================================
+    db.ref("EnergyMonitor/Settings").on("value", (snapshot) => {
+      const settings = snapshot.val();
+      if (settings) {
+        if (settings.OverVoltage !== undefined) {
+          overVoltageLimit = Number(settings.OverVoltage);
+          document.getElementById("overVoltInput").value = overVoltageLimit;
+        }
+        if (settings.UnderVoltage !== undefined) {
+          underVoltageLimit = Number(settings.UnderVoltage);
+          document.getElementById("underVoltInput").value = underVoltageLimit;
+        }
+        if (settings.CostPerKwh !== undefined) {
+          costPerKwh = Number(settings.CostPerKwh);
+          document.getElementById("costInput").value = costPerKwh;
+        }
+      }
+    });
+
+    // =========================================================================
+    // 3. SAVE NEW THRESHOLDS TO FIREBASE WHEN USER CLICKS "SAVE SETTINGS"
+    // =========================================================================
+    function saveThresholds() {
+      const newOverV = parseFloat(document.getElementById("overVoltInput").value) || 259;
+      const newUnderV = parseFloat(document.getElementById("underVoltInput").value) || 180;
+      const newCost = parseFloat(document.getElementById("costInput").value) || 6.5;
+
+      db.ref("EnergyMonitor/Settings").set({
+        OverVoltage: newOverV,
+        UnderVoltage: newUnderV,
+        CostPerKwh: newCost
+      }).then(() => {
+        const msg = document.getElementById("saveConfirmation");
+        msg.style.display = "block";
+        setTimeout(() => { msg.style.display = "none"; }, 3500);
+      });
+    }
+
+    // Helper: Update Semi-Circle Gauge Arc (251.2 is total arc length)
+    function setGaugeArc(elementId, value, maxVal) {
+      const clamped = Math.min(Math.max(value, 0), maxVal);
+      const offset = 251.2 - (clamped / maxVal) * 251.2;
+      document.getElementById(elementId).style.strokeDashoffset = offset;
+    }
+
+    // Helper: Format current time (e.g., "10:30 AM")
+    function getFormattedTime() {
+      return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // Helper: Push new notification to Firebase & UI
+    function logNotification(conditionText, isFault) {
+      const entryText = `${getFormattedTime()} — ${conditionText}`;
+      db.ref("EnergyMonitor/Notifications").push({
+        text: entryText,
+        isFault: isFault
+      });
+    }
+
+    // =========================================================================
+    // 4. LISTEN FOR LIVE TELEMETRY FROM ESP32
+    // =========================================================================
+    db.ref("EnergyMonitor/Live").on("value", (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      const voltage = Number(data.Voltage || 0);
+      const current = Number(data.Current || 0);
+      const power   = Number(data.Power || 0);
+      const energy  = Number(data.Energy || 0);
+      const freq    = Number(data.Frequency || 0);
+      const pf      = Number(data.PowerFactor || 0);
+
+      // Calculate live cost dynamically using the user's Cost per kWh setting
+      const totalCost = energy * costPerKwh;
+
+      // Update numbers on dashboard
+      document.getElementById("voltageVal").innerText = voltage.toFixed(1);
+      document.getElementById("currentVal").innerText = current.toFixed(2);
+      document.getElementById("powerVal").innerText   = power.toFixed(1);
+      document.getElementById("energyVal").innerText  = energy.toFixed(3);
+      document.getElementById("freqVal").innerText    = freq.toFixed(0);
+      document.getElementById("pfVal").innerText      = pf.toFixed(2);
+      document.getElementById("costVal").innerText    = totalCost.toFixed(2);
+
+      // Update Semi-Circular Gauges (Voltage max 300V, Current max 5A)
+      setGaugeArc("voltArc", voltage, 300);
+      setGaugeArc("currArc", current, 5);
+
+      // Evaluate Protection Status against user's Threshold Settings
+      const badge = document.getElementById("statusBadge");
+      const desc  = document.getElementById("statusDesc");
+
+      let currentStatusState = "NORMAL";
+
+      if (voltage > overVoltageLimit) {
+        currentStatusState = "OVER_VOLTAGE";
+        badge.className = "status-badge status-fault";
+        badge.innerText = "Over Voltage";
+        desc.innerText  = "Alert: Voltage is above the over voltage threshold. Relay turned off for protection.";
+      } else if (voltage > 10 && voltage < underVoltageLimit) {
+        currentStatusState = "UNDER_VOLTAGE";
+        badge.className = "status-badge status-fault";
+        badge.innerText = "Under Voltage";
+        desc.innerText  = "Alert: Voltage is below the under voltage threshold. Relay turned off for protection.";
+      } else if (data.Status === "OVERLOAD") {
+        currentStatusState = "OVERLOAD";
+        badge.className = "status-badge status-fault";
+        badge.innerText = "Overload";
+        desc.innerText  = "Alert: Power is above the overload threshold. Relay turned off for protection.";
+      } else {
+        currentStatusState = "NORMAL";
+        badge.className = "status-badge status-normal";
+        badge.innerText = "Normal";
+        desc.innerText  = "System is running normally.";
+      }
+
+      // Add a timestamped log entry whenever the protection state changes
+      if (currentStatusState !== lastStatusState) {
+        lastStatusState = currentStatusState;
+        if (currentStatusState === "NORMAL") {
+          logNotification("Normal condition (load: ON)", false);
+        } else if (currentStatusState === "OVER_VOLTAGE") {
+          logNotification("Over voltage (load: OFF)", true);
+        } else if (currentStatusState === "UNDER_VOLTAGE") {
+          logNotification("Under voltage (load: OFF)", true);
+        } else if (currentStatusState === "OVERLOAD") {
+          logNotification("Overload cutoff (load: OFF)", true);
+        }
+      }
+    });
+
+    // =========================================================================
+    // 5. DISPLAY NOTIFICATION HISTORY LOG (LAST 10 ALERTS)
+    // =========================================================================
+    db.ref("EnergyMonitor/Notifications").limitToLast(10).on("value", (snapshot) => {
+      const listEl = document.getElementById("notificationList");
+      const logs = snapshot.val();
+      if (!logs) return;
+
+      listEl.innerHTML = "";
+      const entries = Object.values(logs).reverse();
+      entries.forEach((item) => {
+        const div = document.createElement("div");
+        div.className = "log-item " + (item.isFault ? "log-fault" : "log-normal");
+        div.innerHTML = `<span>${item.text}</span>`;
+        listEl.appendChild(div);
+      });
+    });
+  </script>
+</body>
+</html>
